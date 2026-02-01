@@ -126,12 +126,6 @@ contract TestPointsHook is Test, Deployers, ERC1155TokenReceiver {
 			eth
     	);
 
-		uint256 tokenToAdd = LiquidityAmounts.getAmount1ForLiquidity(
-			sqrtPriceAtTickLower,
-			SQRT_PRICE_1_1,
-			liquidityDelta
-		);
-
 		modifyLiquidityRouter.modifyLiquidity{value: eth}(
 			key,
 			ModifyLiquidityParams({
@@ -147,5 +141,77 @@ contract TestPointsHook is Test, Deployers, ERC1155TokenReceiver {
 		console.log("points after add liquidity:", pointsAfterAddLiquidity);
 
 		assertEq(pointsAfterAddLiquidity - pointsBalanceBeforeAddLiquidity, eth / 20);
+	}
+
+	function testFuzz_swap(uint256 _amount, bool _zeroForOne, address _pointsRecipient) public {
+		uint256 poolIdUint = uint256(PoolId.unwrap(key.toId()));
+		uint256 pointsBalanceBeforeSwap = hook.balanceOf(_pointsRecipient, poolIdUint);
+
+		bytes memory hookData = abi.encode(_pointsRecipient, address(0));
+
+		_amount = bound(_amount, 5, type(uint128).max);
+
+		if(_zeroForOne) {
+			deal(address(this), _amount);
+		} else {
+			deal(address(token), address(this), _amount);
+			token.approve(address(swapRouter), _amount);
+		}
+
+		swapRouter.swap{value: _zeroForOne ? _amount : 0}(
+			key,
+			SwapParams({
+				zeroForOne: _zeroForOne,
+				amountSpecified: -int256(_amount),
+				sqrtPriceLimitX96: _zeroForOne ?  TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+			}),
+			PoolSwapTest.TestSettings({
+				takeClaims: false,
+				settleUsingBurn: false
+			}),
+			hookData
+		);
+
+		uint256 pointsBalanceAfterSwap = hook.balanceOf(_pointsRecipient, poolIdUint);
+
+		if(_zeroForOne) {
+			assertGt(pointsBalanceAfterSwap, pointsBalanceBeforeSwap, "No points gained");
+		} else {
+			assertEq(pointsBalanceAfterSwap, pointsBalanceBeforeSwap, "Point is not correct");
+		}
+	}
+
+	function testFuzz_add_liquidity(uint256 _amount, address _pointsRecipient) public {
+		uint256 poolIdUint = uint256(PoolId.unwrap(key.toId()));
+		uint256 pointsBalanceBeforeAddLiquidity = hook.balanceOf(_pointsRecipient, poolIdUint);
+		console.log("points before add liquidity:", pointsBalanceBeforeAddLiquidity);
+
+		bytes memory hookData = abi.encode(_pointsRecipient, address(0));
+
+		_amount = bound(_amount, 1e15, 1 ether);
+
+		uint160 sqrtPriceAtTickLower = TickMath.getSqrtPriceAtTick(-60);
+		uint160 sqrtPriceAtTickUpper = TickMath.getSqrtPriceAtTick(60);
+
+		uint128 liquidityDelta = LiquidityAmounts.getLiquidityForAmount0(
+			SQRT_PRICE_1_1,
+			sqrtPriceAtTickUpper,
+			_amount
+    	);
+
+		modifyLiquidityRouter.modifyLiquidity{value: _amount}(
+			key,
+			ModifyLiquidityParams({
+				tickLower: -60,
+				tickUpper: 60,
+				liquidityDelta: int256(uint256(liquidityDelta)),
+				salt: bytes32(0)
+			}),
+			hookData
+		);
+
+		uint256 pointsBalanceAfterAddLiquidity = hook.balanceOf(_pointsRecipient, poolIdUint);
+
+		assertGt(pointsBalanceAfterAddLiquidity, pointsBalanceBeforeAddLiquidity, "no points gained");
 	}
 }
