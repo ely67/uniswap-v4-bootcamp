@@ -87,7 +87,7 @@ contract PointsHook is BaseHook, ERC1155 {
     function _afterAddLiquidity(
         address,
         PoolKey calldata key,
-        ModifyLiquidityParams calldata,
+        ModifyLiquidityParams calldata modifyLiqudityParams,
         BalanceDelta delta,
         BalanceDelta,
         bytes calldata hookData
@@ -100,10 +100,8 @@ contract PointsHook is BaseHook, ERC1155 {
             return (this.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
         }
 
-        // Liquidity-add points
-        // - We award points based on the ETH side of the add.
-        uint256 ethAmount = uint256(int256(delta.amount0()));
-        uint256 pointsForAddLiquidity = ethAmount / 4;
+        uint256 ethAmount = uint256(int256(-delta.amount0()));
+        uint256 pointsForAddLiquidity = ethAmount / 20;
 
         _assignPoints(key.toId(), hookData, pointsForAddLiquidity, 0);
         return (this.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
